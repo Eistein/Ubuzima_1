@@ -54,10 +54,9 @@ be bundled into a public, always-on web host. See
 | Setup needed | MorphoKIN license file, ~26GB download | None — just open the link |
 | Used for | The demo video (see below) | The always-on public link for graders/reviewers |
 
-**🔗 Live permanent demo:** _[add your Hugging Face Spaces URL here after
-deploying — see DEPLOYMENT.md]_
+**🔗 Live permanent demo:** to be added in future
 
-**🎥 Demo video:** _[add your video link here]_
+**🎥 Demo video:** https://youtu.be/88LHkyXFKLQ 
 
 ---
 
