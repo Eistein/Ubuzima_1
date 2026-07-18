@@ -326,4 +326,6 @@ def build_ui(pipeline: Pipeline) -> gr.Blocks:
 
 
 if __name__ == "__main__":
-    build_ui(Pipeline()).launch(server_name="0.0.0.0", server_port=7860)
+    import os as _os_main
+    _port = int(_os_main.environ.get("PORT", "7860"))
+    build_ui(Pipeline()).launch(server_name="0.0.0.0", server_port=_port)
