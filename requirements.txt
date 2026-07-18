@@ -1,0 +1,35 @@
+# UBUZIMA AI — Hugging Face Space (CPU basic, free tier)
+#
+# CPU wheels matter. The default PyPI torch wheel bundles CUDA libraries (~2.5 GB
+# you will never execute). The index below pulls the CPU-only build: much smaller,
+# much faster to build, and identical numerically for our purposes.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# --- core runtime ---
+torch==2.3.1
+torchaudio==2.3.1
+transformers==4.44.2
+peft==0.12.0
+accelerate==0.33.0
+
+# --- interface ---
+gradio==4.44.0
+
+# --- audio ---
+soundfile==0.12.1
+librosa==0.10.2
+numpy<2.0
+
+# --- LLM ---
+google-generativeai==0.7.2
+
+# --- TTS ---
+# DigitalUmuganda/Kinyarwanda_YourTTS_v1 runs on Coqui TTS. The original `TTS`
+# package is archived; `coqui-tts` is the maintained fork and keeps the `TTS`
+# import path.
+coqui-tts==0.24.2
+huggingface_hub>=0.24
+
+# --- evaluation (benchmark.py only) ---
+jiwer==3.0.4
+evaluate==0.4.2

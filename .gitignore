@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.env
+.venv/
+venv/
+results/
+samples/*.wav
+*.ckpt
+*.pth
+.ipynb_checkpoints/
+.DS_Store
