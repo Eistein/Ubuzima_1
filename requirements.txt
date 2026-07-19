@@ -1,5 +1,13 @@
 gradio==4.44.0
 pydantic<2.9.0
+starlette<1.0.0
+fastapi<1.0.0
+# pinned starlette/fastapi <1.0 because gradio 4.44.0 calls Starlette's
+# TemplateResponse() using the old 2-arg signature (name, context_dict).
+# Starlette 1.0.0 changed this to (request, name, context) — without the
+# pin, pip installs the newest Starlette and every page load crashes with
+# "TypeError: unhashable type: 'dict'" (the context dict gets passed where
+# the template name is expected).
 # pinned <2.9 because gradio 4.44.0's internal schema parser breaks on the
 # boolean-shorthand JSON schemas (additionalProperties: true) that newer
 # pydantic generates — causes "TypeError: argument of type 'bool' is not
