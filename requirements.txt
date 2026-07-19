@@ -1,12 +1,11 @@
-# Do NOT list `gradio` here — the Space's SDK (set to "gradio" in README.md's
-# YAML header) already provides it. Listing it can cause a version conflict
-# with the Spaces runtime.
-
-transformers>=4.40.0
-torch>=2.1.0
-google-generativeai>=0.5.0
-soundfile>=0.12.1
-librosa>=0.10.1
-numpy>=1.24.0
-accelerate>=0.28.0
-gradio==5.5.0
+gradio==4.44.0
+transformers>=4.40
+peft==0.11.1
+accelerate
+soundfile
+librosa
+requests
+huggingface_hub
+# torch is installed separately in the Dockerfile as a CPU-only wheel
+# (much smaller than the default CUDA build, and Railway has no GPU).
+# If running locally with a GPU, just: pip install torch
