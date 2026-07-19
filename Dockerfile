@@ -18,6 +18,10 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
 # see README notes below)
 COPY . .
 
+# Ensures print()/tracebacks flush immediately to Railway's log stream
+# instead of being buffered and possibly lost on a crash.
+ENV PYTHONUNBUFFERED=1
+
 # Railway injects $PORT at runtime; app.py reads it directly
 ENV PORT=7860
 EXPOSE 7860
