@@ -1,4 +1,9 @@
 gradio==4.44.0
+pydantic<2.9.0
+# pinned <2.9 because gradio 4.44.0's internal schema parser breaks on the
+# boolean-shorthand JSON schemas (additionalProperties: true) that newer
+# pydantic generates — causes "TypeError: argument of type 'bool' is not
+# iterable" on every page load. Known upstream gradio/pydantic bug.
 transformers>=4.40
 peft==0.11.1
 accelerate
