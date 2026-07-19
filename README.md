@@ -1,141 +1,202 @@
-# 🩺 UBUZIMA AI — Kinyarwanda Voice Health Assistant
-
-A voice-first health-information assistant that lets someone speak or type a
-health question **in Kinyarwanda** and get a spoken Kinyarwanda answer back.
-
-Part of the **URURIMI AI** research initiative on Kinyarwanda speech
-technology. Capstone project by **Ganza Didier**, BSc Software Engineering
-(Data Science & ML), African Leadership University, Kigali.
-**Supervisor:** Emmanuel Adjei.
-
-> ⚠️ This tool does not replace a doctor. If you have a serious health
-> concern, please see a medical professional.
-> *(Iri gikoresho ntabwo risimbura muganga. Iyo ufite ikibazo gikomeye, jya
-> kwa muganga.)*
-
+---
+base_model: badrex/w2v-bert-2.0-kinyarwanda-asr
+library_name: peft
 ---
 
-## How it works
+# Model Card for Model ID
 
-```
-🎤 User speaks or types a question in Kinyarwanda
-    → Whisper ASR converts speech → Kinyarwanda text
-    → Google Gemini answers the question in Kinyarwanda
-    → A text-to-speech model converts the answer → spoken Kinyarwanda
-🔊 User hears the answer
-```
+<!-- Provide a quick summary of what the model is/does. -->
 
-| Stage | Model | Role |
-|---|---|---|
-| **Ears** (ASR) | [`akera/whisper-large-v3-kin-200h-v2`](https://huggingface.co/akera/whisper-large-v3-kin-200h-v2) | Speech → Kinyarwanda text |
-| **Brain** (LLM) | Google Gemini (`gemini-2.5-flash`) | Question → Kinyarwanda answer |
-| **Mouth** (TTS) | [`C4IR-RW/kinya-flex-tts`](https://huggingface.co/C4IR-RW/kinya-flex-tts) (full pipeline) → [`facebook/mms-tts-kin`](https://huggingface.co/facebook/mms-tts-kin) (fallback / hosted demo) | Text → spoken Kinyarwanda |
 
-**A note on the LLM name:** the class in the notebook is currently named
-`GeminiAssistant` (an earlier prototype used the Anthropic Claude API and was
-named `ClaudeAssistant` — that name is kept as a backward-compatible alias).
-The system that actually answers questions is Google Gemini, and every label
-in this project (UI, docs, About tab) says so accurately.
 
----
+## Model Details
 
-## Two ways to run this project
+### Model Description
 
-This project has **two deployment targets**, because the full pipeline's
-best-quality TTS model (`kinya-flex-tts`, 3 voices) depends on a licensed,
-26GB toolchain that can only run in an environment you control — it cannot
-be bundled into a public, always-on web host. See
-[`DEPLOYMENT.md`](DEPLOYMENT.md) for the full explanation.
+<!-- Provide a longer summary of what this model is. -->
 
-| | **Full pipeline** (this repo's notebook) | **Hosted demo** (`deploy/`) |
-|---|---|---|
-| TTS | `kinya-flex-tts`, 3 voices, 24kHz | `mms-tts-kin`, 1 voice, 16kHz |
-| Where it runs | Google Colab (GPU) | Hugging Face Spaces (free, permanent URL) |
-| Setup needed | MorphoKIN license file, ~26GB download | None — just open the link |
-| Used for | The demo video (see below) | The always-on public link for graders/reviewers |
 
-**🔗 Live permanent demo:** to be added in future
 
-**🎥 Demo video:** https://youtu.be/88LHkyXFKLQ 
+- **Developed by:** [More Information Needed]
+- **Funded by [optional]:** [More Information Needed]
+- **Shared by [optional]:** [More Information Needed]
+- **Model type:** [More Information Needed]
+- **Language(s) (NLP):** [More Information Needed]
+- **License:** [More Information Needed]
+- **Finetuned from model [optional]:** [More Information Needed]
 
----
+### Model Sources [optional]
 
-## Repository contents
+<!-- Provide the basic links for the model. -->
 
-```
-.
-├── README.md                      ← you are here
-├── DEPLOYMENT.md                  ← how to get a permanent URL (Spaces walkthrough)
-├── ANALYSIS.md                    ← results, discussion, recommendations (draft — finalize with supervisor)
-├── ubuzima_ai_platform.ipynb      ← full pipeline notebook (Colab, GPU, 3-voice TTS)
-├── deploy/
-│   ├── app.py                     ← portable Gradio app for Hugging Face Spaces
-│   └── requirements.txt           ← dependencies for the hosted deployment
-└── .gitignore
-```
+- **Repository:** [More Information Needed]
+- **Paper [optional]:** [More Information Needed]
+- **Demo [optional]:** [More Information Needed]
 
----
+## Uses
 
-## Running the full pipeline (`ubuzima_ai_platform.ipynb`)
+<!-- Address questions around how the model is intended to be used, including the foreseeable users of the model and those affected by the model. -->
 
-### Prerequisites
-- A Google account with access to [Google Colab](https://colab.research.google.com/)
-- A Colab GPU runtime (Runtime → Change runtime type → GPU; T4 is the free-tier option, A100 recommended if available)
-- A **Google Gemini API key** — get one free at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
-- A **MorphoKIN license file** (`.dat`) — required only if you want the full
-  3-voice `kinya-flex-tts` output. Without it, the notebook automatically
-  falls back to MMS-TTS (still fully functional, single voice).
+### Direct Use
 
-### Step by step
-1. Open `ubuzima_ai_platform.ipynb` in Google Colab (File → Upload notebook, or open directly from GitHub).
-2. Set the runtime to GPU (Runtime → Change runtime type → T4 GPU or better).
-3. Add your Gemini key as a Colab secret:
-   - Click the 🔑 key icon in the left sidebar.
-   - Add a new secret named `GOOGLE_API_KEY` with your key as the value.
-   - Toggle "Notebook access" on for this notebook.
-4. Run **Cell 1** (system dependencies), then **restart the runtime** when prompted (Runtime → Restart session). This step only needs to happen once per Colab session.
-5. Run every cell from the top in order. When you reach the MorphoKIN license-upload cell, either:
-   - Upload your `.dat` license file when prompted (enables 3-voice TTS), **or**
-   - Skip that cell — the pipeline will automatically use the MMS-TTS fallback (1 voice) instead.
-6. The final cell launches the Gradio app with `share=True`, which prints a public `https://xxxxx.gradio.live` URL. This URL is **temporary** — it stops working when the Colab runtime disconnects or the notebook is closed. For a permanent URL, see [`DEPLOYMENT.md`](DEPLOYMENT.md).
-7. Test the app: try all 6 example questions on the Text tab, then test the Voice tab with your microphone.
+<!-- This section is for the model use without fine-tuning or plugging into a larger ecosystem/app. -->
 
----
+[More Information Needed]
 
-## Running the hosted demo locally (`deploy/app.py`)
+### Downstream Use [optional]
 
-This is the same portable app that's deployed to Hugging Face Spaces — useful if you want to test or modify it before pushing.
+<!-- This section is for the model use when fine-tuned for a task, or when plugged into a larger ecosystem/app -->
 
-```bash
-cd deploy
-pip install -r requirements.txt
-export GOOGLE_API_KEY="your-gemini-api-key"
-python app.py
-```
+[More Information Needed]
 
-This opens a local Gradio server (default `http://127.0.0.1:7860`) running ASR + Gemini + MMS-TTS — no MorphoKIN, no license file, no `sudo` required. A GPU speeds up ASR but is not required.
+### Out-of-Scope Use
 
----
+<!-- This section addresses misuse, malicious use, and uses that the model will not work well for. -->
 
-## Getting a permanent URL instead of a `.gradio.live` link
+[More Information Needed]
 
-Short answer: **deploy `deploy/app.py` to Hugging Face Spaces.** Full walkthrough, cost breakdown, and the reasoning behind this choice are in [`DEPLOYMENT.md`](DEPLOYMENT.md).
+## Bias, Risks, and Limitations
 
----
+<!-- This section is meant to convey both technical and sociotechnical limitations. -->
 
-## Known limitations
+[More Information Needed]
 
-- **LLM answers are general information, not medical diagnosis.** The system prompt explicitly constrains Gemini to short, general Kinyarwanda health guidance.
-- **Kinyarwanda ASR accuracy** depends on the `akera` checkpoint's training data (200h); background noise and unclear speech will degrade transcription quality.
-- **The hosted demo uses single-voice TTS** (MMS-TTS) rather than the 3-voice `kinya-flex-tts` model used in the full pipeline, for the portability reasons explained above.
-- **Free-tier Hugging Face Spaces sleep after ~48 hours of inactivity** and take a short moment to wake up on the next visit. See `DEPLOYMENT.md` for what this means in practice.
+### Recommendations
 
----
+<!-- This section is meant to convey recommendations with respect to the bias, risk, and technical limitations. -->
 
-## Credits
+Users (both direct and downstream) should be made aware of the risks, biases and limitations of the model. More information needed for further recommendations.
 
-- ASR: [akera/whisper-large-v3-kin-200h-v2](https://huggingface.co/akera/whisper-large-v3-kin-200h-v2)
-- TTS (full pipeline): [C4IR Rwanda](https://huggingface.co/C4IR-RW) + [KiNLP](https://kinlp.com/)
-- TTS (hosted demo): [Meta MMS-TTS](https://huggingface.co/facebook/mms-tts-kin)
-- LLM: [Google Gemini](https://ai.google.dev/)
-- UI: [Gradio](https://gradio.app/)
+## How to Get Started with the Model
+
+Use the code below to get started with the model.
+
+[More Information Needed]
+
+## Training Details
+
+### Training Data
+
+<!-- This should link to a Dataset Card, perhaps with a short stub of information on what the training data is all about as well as documentation related to data pre-processing or additional filtering. -->
+
+[More Information Needed]
+
+### Training Procedure
+
+<!-- This relates heavily to the Technical Specifications. Content here should link to that section when it is relevant to the training procedure. -->
+
+#### Preprocessing [optional]
+
+[More Information Needed]
+
+
+#### Training Hyperparameters
+
+- **Training regime:** [More Information Needed] <!--fp32, fp16 mixed precision, bf16 mixed precision, bf16 non-mixed precision, fp16 non-mixed precision, fp8 mixed precision -->
+
+#### Speeds, Sizes, Times [optional]
+
+<!-- This section provides information about throughput, start/end time, checkpoint size if relevant, etc. -->
+
+[More Information Needed]
+
+## Evaluation
+
+<!-- This section describes the evaluation protocols and provides the results. -->
+
+### Testing Data, Factors & Metrics
+
+#### Testing Data
+
+<!-- This should link to a Dataset Card if possible. -->
+
+[More Information Needed]
+
+#### Factors
+
+<!-- These are the things the evaluation is disaggregating by, e.g., subpopulations or domains. -->
+
+[More Information Needed]
+
+#### Metrics
+
+<!-- These are the evaluation metrics being used, ideally with a description of why. -->
+
+[More Information Needed]
+
+### Results
+
+[More Information Needed]
+
+#### Summary
+
+
+
+## Model Examination [optional]
+
+<!-- Relevant interpretability work for the model goes here -->
+
+[More Information Needed]
+
+## Environmental Impact
+
+<!-- Total emissions (in grams of CO2eq) and additional considerations, such as electricity usage, go here. Edit the suggested text below accordingly -->
+
+Carbon emissions can be estimated using the [Machine Learning Impact calculator](https://mlco2.github.io/impact#compute) presented in [Lacoste et al. (2019)](https://arxiv.org/abs/1910.09700).
+
+- **Hardware Type:** [More Information Needed]
+- **Hours used:** [More Information Needed]
+- **Cloud Provider:** [More Information Needed]
+- **Compute Region:** [More Information Needed]
+- **Carbon Emitted:** [More Information Needed]
+
+## Technical Specifications [optional]
+
+### Model Architecture and Objective
+
+[More Information Needed]
+
+### Compute Infrastructure
+
+[More Information Needed]
+
+#### Hardware
+
+[More Information Needed]
+
+#### Software
+
+[More Information Needed]
+
+## Citation [optional]
+
+<!-- If there is a paper or blog post introducing the model, the APA and Bibtex information for that should go in this section. -->
+
+**BibTeX:**
+
+[More Information Needed]
+
+**APA:**
+
+[More Information Needed]
+
+## Glossary [optional]
+
+<!-- If relevant, include terms and calculations in this section that can help readers understand the model or model card. -->
+
+[More Information Needed]
+
+## More Information [optional]
+
+[More Information Needed]
+
+## Model Card Authors [optional]
+
+[More Information Needed]
+
+## Model Card Contact
+
+[More Information Needed]
+### Framework versions
+
+- PEFT 0.11.1
