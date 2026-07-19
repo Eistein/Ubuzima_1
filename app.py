@@ -34,6 +34,13 @@ import gradio as gr
 ASR_ADAPTER = os.environ.get("ASR_ADAPTER_PATH", "./adapter")
 ASR_BASE = "badrex/w2v-bert-2.0-kinyarwanda-asr"
 
+# Debug aid: print what actually made it into the container so a missing
+# adapter shows up clearly in the Railway logs instead of a bare error.
+print(f"Working directory: {os.getcwd()}")
+print(f"Contents: {sorted(os.listdir('.'))}")
+if Path(ASR_ADAPTER).exists():
+    print(f"Adapter contents: {sorted(os.listdir(ASR_ADAPTER))}")
+
 if not Path(ASR_ADAPTER).exists():
     raise RuntimeError(
         f"Adapter not found at {ASR_ADAPTER}. Commit your LoRA adapter folder "
@@ -138,7 +145,17 @@ def transcribe(audio_array, sample_rate):
 
     inputs = asr_processor.feature_extractor(
         audio_array, sampling_rate=16000, return_tensors="pt"
-    ).to(DEVICE)
+    )
+    print(f"[transcribe] feature extractor output keys: {list(inputs.keys())}")
+    # Some processor/transformers version combinations include extra keys
+    # (e.g. input_ids, which belongs to text tokenization, not audio
+    # features) in this output. Wav2Vec2BertForCTC.forward() only accepts
+    # input_features and attention_mask, so filter explicitly rather than
+    # passing the raw dict through.
+    inputs = {
+        k: v.to(DEVICE) for k, v in inputs.items()
+        if k in ("input_features", "attention_mask")
+    }
     with torch.no_grad():
         logits = asr_model(**inputs).logits
     pred_ids = torch.argmax(logits, dim=-1).cpu().numpy()
