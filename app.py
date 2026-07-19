@@ -65,12 +65,21 @@ print(f"Device: {DEVICE}")
 # --------------------------------------------------------------------------
 
 from transformers import Wav2Vec2BertForCTC, Wav2Vec2BertProcessor
-from peft import PeftModel
+from peft import PeftConfig, PeftModel
 
 print("Loading ASR...")
 asr_processor = Wav2Vec2BertProcessor.from_pretrained(ASR_ADAPTER)
 asr_base = Wav2Vec2BertForCTC.from_pretrained(ASR_BASE, torch_dtype=torch.float32)
-asr_model = PeftModel.from_pretrained(asr_base, ASR_ADAPTER).to(DEVICE).eval()
+
+# The adapter's saved config has a task_type (e.g. CAUSAL_LM) that makes
+# PeftModel.from_pretrained() dispatch to a text-model wrapper class whose
+# forward() always injects input_ids=None into the call — which
+# Wav2Vec2BertForCTC rejects outright. Clearing task_type forces PEFT to
+# use the generic PeftModel wrapper instead, which passes kwargs through
+# unmodified.
+peft_config = PeftConfig.from_pretrained(ASR_ADAPTER)
+peft_config.task_type = None
+asr_model = PeftModel.from_pretrained(asr_base, ASR_ADAPTER, config=peft_config).to(DEVICE).eval()
 print("ASR ready (badrex + your LoRA adapter)")
 
 # --------------------------------------------------------------------------
