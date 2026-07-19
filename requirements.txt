@@ -5,7 +5,11 @@ accelerate
 soundfile
 librosa
 requests
-huggingface_hub
+huggingface_hub<0.26
+# pinned <0.26 because gradio==4.44.0 internally imports HfFolder from
+# huggingface_hub, which was removed in 0.26 — installing latest breaks
+# gradio's import chain (this is what caused the ImportError you hit)
+#
 # torch is installed separately in the Dockerfile as a CPU-only wheel
 # (much smaller than the default CUDA build, and Railway has no GPU).
 # If running locally with a GPU, just: pip install torch
