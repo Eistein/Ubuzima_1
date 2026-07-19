@@ -9,3 +9,4 @@ soundfile>=0.12.1
 librosa>=0.10.1
 numpy>=1.24.0
 accelerate>=0.28.0
+gradio==5.5.0
