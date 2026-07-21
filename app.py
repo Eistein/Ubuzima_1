@@ -1,5 +1,5 @@
 """
-UBUZIMA AI — Kinyarwanda Voice Health Assistant
+UBUZIMA AI — Umufasha w'ubuzima uvuga mu Kinyarwanda
 Production build for Railway (adapted from the Colab demo notebook).
 
 Pipeline: badrex/w2v-bert-2.0-kinyarwanda-asr + your LoRA adapter (bundled
@@ -8,7 +8,7 @@ in ./adapter) -> Gemini 2.5 Flash via OpenRouter -> Meta MMS-TTS (Kinyarwanda)
 Required environment variables (set these in Railway's dashboard, never
 hardcode them):
     OPENROUTER_API_KEY   - from openrouter.ai/keys
-    HF_TOKEN              - optional, only needed if badrex's model is gated
+    HF_TOKEN             - optional, only needed if badrex's model is gated
 
 Local run:
     pip install -r requirements.txt
@@ -27,6 +27,49 @@ import librosa
 import torch
 import gradio as gr
 
+# ==========================================================================
+# UI TEXT — Kinyarwanda strings in ONE place. Edit freely; you're the native
+# speaker. Nothing user-facing lives outside this block.
+# ==========================================================================
+
+TXT = {
+    "tagline": "Umufasha w'ubuzima uvuga mu Kinyarwanda",
+    "subtitle": "Baza ikibazo cy'ubuzima mu majwi, ubone igisubizo mu majwi mu Kinyarwanda",
+    "live": "Irakora",
+    "pill_asr": "ASR: badrex + LoRA",
+    "pill_llm": "LLM: Gemini 2.5 Flash",
+    "pill_wer": "WER: 6.76% ubuzima / 31.29% rusange",
+
+    "voice_card": "Baza amajwi hano",
+    "voice_hint": "Kanda mikoro, uvuge ikibazo cyawe, hanyuma ukande \u201cTanga igisubizo\u201d.",
+    "btn_run": "\u25B6 Tanga igisubizo",
+    "btn_reset": "\u21BA Siba",
+
+    "examples_head": "Ingero z'ibibazo washobora kubaza",
+
+    "card1": "Icyo wavuze",
+    "card1_ph": "Amagambo yawe azagaragara hano nyuma yo kumva ijwi\u2026",
+    "card2": "Igisubizo cya UBUZIMA AI",
+    "card2_ph": "Igisubizo mu Kinyarwanda kizagaragara hano\u2026",
+    "card3": "Igisubizo mu majwi",
+
+    # progress + errors
+    "p_asr": "\U0001F3A4 Turimo kwandika icyo wavuze\u2026",
+    "p_llm": "\U0001F4AD UBUZIMA AI iratekereza\u2026",
+    "p_tts": "\U0001F50A Turimo gukora igisubizo mu majwi\u2026",
+    "p_done": "\u2713 Byarangiye",
+    "e_not_ready": "\u26A0\uFE0F Ijwi ntiryiteguye. Nyuma yo gukanda \u201cHagarika\u201d kuri mikoro, tegereza amasegonda 1-2, hanyuma ukande \u201cTanga igisubizo\u201d nanone.",
+    "e_format": "\u26A0\uFE0F Ikibazo ku miterere y'ijwi: {e}",
+    "e_empty": "\u26A0\uFE0F Nta jwi ryinjiye. Ongera ugerageze kuvuga.",
+    "e_asr": "\u26A0\uFE0F Ikosa mu kwandika ijwi: {t}: {e}",
+    "e_unclear": "(Ntitwabashije kumva neza ijwi. Gerageza kuvuga urerure gato kandi buhoro.)",
+    "e_llm": "\u26A0\uFE0F Ikosa mu gutanga igisubizo: {t}: {e}",
+    "e_tts": "[\u26A0\uFE0F Ikosa mu gukora ijwi: {e}]",
+
+    "disc_strong": "\u26A0\uFE0F Iyi ni porototipe y'ubushakashatsi gusa.",
+    "disc_body": "Si igikoresho cyo gusuzuma indwara. Buri gihe jya kwa muganga cyangwa CHW iyo ufite ikibazo cy'ubuzima.",
+}
+
 # --------------------------------------------------------------------------
 # Stage 1 — Config and auth (no interactive prompts — env vars only)
 # --------------------------------------------------------------------------
@@ -34,8 +77,6 @@ import gradio as gr
 ASR_ADAPTER = os.environ.get("ASR_ADAPTER_PATH", "./adapter")
 ASR_BASE = "badrex/w2v-bert-2.0-kinyarwanda-asr"
 
-# Debug aid: print what actually made it into the container so a missing
-# adapter shows up clearly in the Railway logs instead of a bare error.
 print(f"Working directory: {os.getcwd()}")
 print(f"Contents: {sorted(os.listdir('.'))}")
 if Path(ASR_ADAPTER).exists():
@@ -71,20 +112,13 @@ print("Loading ASR...")
 asr_processor = Wav2Vec2BertProcessor.from_pretrained(ASR_ADAPTER)
 asr_base = Wav2Vec2BertForCTC.from_pretrained(ASR_BASE, torch_dtype=torch.float32)
 
-# The adapter's saved config has a task_type (e.g. CAUSAL_LM) that makes
-# PeftModel.from_pretrained() dispatch to a text-model wrapper class whose
-# forward() always injects input_ids=None into the call — which
-# Wav2Vec2BertForCTC rejects outright. Clearing task_type forces PEFT to
-# use the generic PeftModel wrapper instead, which passes kwargs through
-# unmodified.
 peft_config = PeftConfig.from_pretrained(ASR_ADAPTER)
 peft_config.task_type = None
 asr_model = PeftModel.from_pretrained(asr_base, ASR_ADAPTER, config=peft_config).to(DEVICE).eval()
 print("ASR ready (badrex + your LoRA adapter)")
 
 # --------------------------------------------------------------------------
-# Stage 3 — Load TTS (MMS-TTS only — lighter and more reliable in containers
-# than Coqui YourTTS, which needs espeak-ng and a large extra model download)
+# Stage 3 — Load TTS (Meta MMS-TTS Kinyarwanda)
 # --------------------------------------------------------------------------
 
 from transformers import VitsModel, AutoTokenizer
@@ -156,11 +190,6 @@ def transcribe(audio_array, sample_rate):
         audio_array, sampling_rate=16000, return_tensors="pt"
     )
     print(f"[transcribe] feature extractor output keys: {list(inputs.keys())}")
-    # Some processor/transformers version combinations include extra keys
-    # (e.g. input_ids, which belongs to text tokenization, not audio
-    # features) in this output. Wav2Vec2BertForCTC.forward() only accepts
-    # input_features and attention_mask, so filter explicitly rather than
-    # passing the raw dict through.
     inputs = {
         k: v.to(DEVICE) for k, v in inputs.items()
         if k in ("input_features", "attention_mask")
@@ -185,45 +214,42 @@ def speak(text):
 def safe_pipeline(audio_input, progress=gr.Progress()):
     """End-to-end ASR -> LLM -> TTS with visible progress and graceful errors."""
     if audio_input is None:
-        return (
-            "⚠️ Audio not ready. After clicking Stop on the mic, wait 1-2 seconds, then click Process again.",
-            "—", None,
-        )
+        return TXT["e_not_ready"], "\u2014", None
 
     try:
         sample_rate, audio_array = audio_input
     except Exception as e:
-        return f"⚠️ Audio format issue: {e}", "—", None
+        return TXT["e_format"].format(e=e), "\u2014", None
 
     if audio_array is None or len(audio_array) == 0:
-        return "⚠️ Empty audio. Try recording again.", "—", None
+        return TXT["e_empty"], "\u2014", None
 
-    progress(0.25, desc="🎙️ Transcribing your Kinyarwanda...")
+    progress(0.25, desc=TXT["p_asr"])
     try:
         transcript = transcribe(audio_array, sample_rate)
     except Exception as e:
         traceback.print_exc()
-        return f"⚠️ ASR error: {type(e).__name__}: {e}", "—", None
+        return TXT["e_asr"].format(t=type(e).__name__, e=e), "\u2014", None
 
     if not transcript or len(transcript.strip()) < 2:
-        return "(Couldn't understand the audio. Try speaking louder and a bit slower.)", "—", None
+        return TXT["e_unclear"], "\u2014", None
 
-    progress(0.5, desc="💭 UBUZIMA AI is thinking...")
+    progress(0.5, desc=TXT["p_llm"])
     try:
         answer = llm_answer(transcript)
     except Exception as e:
         traceback.print_exc()
-        return transcript, f"⚠️ LLM error: {type(e).__name__}: {e}", None
+        return transcript, TXT["e_llm"].format(t=type(e).__name__, e=e), None
 
-    progress(0.85, desc="🔊 Generating spoken answer...")
+    progress(0.85, desc=TXT["p_tts"])
     try:
         wav, sr = speak(answer)
         audio_out = (sr, (wav * 32767).astype(np.int16)) if wav is not None else None
     except Exception as e:
         traceback.print_exc()
-        return transcript, f"{answer}\n\n[⚠️ TTS error: {e}]", None
+        return transcript, f"{answer}\n\n{TXT['e_tts'].format(e=e)}", None
 
-    progress(1.0, desc="✓ Done")
+    progress(1.0, desc=TXT["p_done"])
     return transcript, answer, audio_out
 
 
@@ -233,63 +259,81 @@ print(f"  LLM: {LLM_MODEL} (via OpenRouter)")
 print(f"  TTS: {TTS_LABEL}")
 
 # --------------------------------------------------------------------------
-# Stage 6 — UI
+# Stage 6 — UI (dark theme, Kinyarwanda-first)
 # --------------------------------------------------------------------------
 
 EXAMPLE_QUESTIONS = [
-    ("🦟", "Malariya", "Ni iki gikora malariya kandi nigute twayirinda?"),
-    ("👶", "Umwana ufite umuriro", "Umwana wanjye ufite umuriro mwinshi, nakora iki?"),
-    ("🤧", "Ubwandu", "Nigute ndinda ubwandu bw'ubuhumekero?"),
-    ("💧", "Amazi & ubuzima", "Ese kunywa amazi menshi bifite akamaro ki ku buzima?"),
-    ("🤕", "Umutwe ubabaza", "Mfite umutwe ubabaza kuva ejo, ni iki nakora?"),
-    ("🤰", "Ubuzima bw'ababyeyi", "Umugore utwite agomba kurya iki?"),
+    ("\U0001F99F", "Malariya", "Ni iki gikora malariya kandi nigute twayirinda?"),
+    ("\U0001F476", "Umwana ufite umuriro", "Umwana wanjye ufite umuriro mwinshi, nakora iki?"),
+    ("\U0001F927", "Ubwandu", "Nigute ndinda ubwandu bw'ubuhumekero?"),
+    ("\U0001F4A7", "Amazi n'ubuzima", "Ese kunywa amazi menshi bifite akamaro ki ku buzima?"),
+    ("\U0001F915", "Umutwe ubabaza", "Mfite umutwe ubabaza kuva ejo, ni iki nakora?"),
+    ("\U0001F930", "Ubuzima bw'ababyeyi", "Umugore utwite agomba kurya iki?"),
 ]
 
 CUSTOM_CSS = """
 :root {
-  --primary: #00897b; --primary-dark: #00695c; --primary-light: #4db6ac;
-  --accent: #ffa726; --bg-soft: #f0fdf9; --text-muted: #546e7a; --border: #e0f2f1;
+  --uz-bg:#0f0f11; --uz-card:#17171b; --uz-card2:#1c1c21; --uz-border:#2a2a31;
+  --uz-orange:#e8722c; --uz-orange-soft:#f0997b; --uz-indigo:#6366d9;
+  --uz-text:#e7e7ea; --uz-muted:#9a9aa4; --uz-green:#3ddc84;
 }
-.hero {
-  background: linear-gradient(135deg, #00897b 0%, #00bfa5 60%, #4db6ac 100%);
-  color: white; padding: 32px 28px; border-radius: 16px; margin-bottom: 20px;
-  box-shadow: 0 8px 24px rgba(0, 137, 123, 0.18);
-}
-.hero h1 { font-size: 2.4em !important; font-weight: 700; margin: 0 0 8px 0 !important; color: white !important; letter-spacing: -0.5px; }
-.hero p { font-size: 1.05em; margin: 0; opacity: 0.96; color: white !important; }
-.hero .tagline { font-weight: 500; font-size: 1.15em; margin-bottom: 4px !important; }
-.status-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
-.status-pill { background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.28); color: white; padding: 6px 14px; border-radius: 999px; font-size: 0.85em; font-weight: 500; }
-.status-pill .dot { display: inline-block; width: 7px; height: 7px; background: #76ff03; border-radius: 50%; margin-right: 6px; box-shadow: 0 0 6px #76ff03; }
-.section-card { background: white; border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-.examples-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
-.example-card { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; transition: all 0.2s ease; }
-.example-card:hover { background: white; border-color: var(--primary-light); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 137, 123, 0.08); }
-.example-card .icon { font-size: 1.4em; margin-bottom: 4px; }
-.example-card .topic { font-weight: 600; font-size: 0.85em; color: var(--primary-dark); margin-bottom: 4px; }
-.example-card .question { font-size: 0.85em; color: var(--text-muted); font-style: italic; line-height: 1.4; }
-button.lg.primary { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%) !important; border: none !important; font-weight: 600 !important; font-size: 1.05em !important; padding: 14px 24px !important; }
-button.lg.primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0, 137, 123, 0.28) !important; }
-.howto { background: #e1f5fe; border-left: 4px solid #0288d1; padding: 12px 16px; border-radius: 8px; font-size: 0.9em; margin: 12px 0; color: #01579b; }
-.disclaimer { margin-top: 24px; padding: 14px 18px; background: #fff8e1; border-left: 4px solid var(--accent); border-radius: 8px; font-size: 0.88em; color: #5d4037; }
-.disclaimer strong { color: #e65100; }
-.credits { text-align: center; font-size: 0.78em; color: var(--text-muted); margin-top: 14px; padding: 10px; }
-.credits a { color: var(--primary); text-decoration: none; }
-@media (max-width: 768px) { .examples-grid { grid-template-columns: 1fr; } .hero h1 { font-size: 1.8em !important; } }
+.gradio-container { background: var(--uz-bg) !important; max-width: 940px !important; }
+.hero { background: var(--uz-card); border: 1px solid var(--uz-border); border-radius: 16px; padding: 26px 28px; margin-bottom: 18px; }
+.hero-top { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.hero-id { display:flex; align-items:center; gap:14px; }
+.hero-logo { width:46px; height:46px; border-radius:12px; background:var(--uz-orange); display:flex; align-items:center; justify-content:center; font-size:22px; }
+.hero h1 { font-size:1.9em !important; font-weight:700; margin:0 !important; color:var(--uz-orange) !important; letter-spacing:-0.5px; }
+.hero .tagline { color:var(--uz-muted); font-size:0.95em; margin:2px 0 0; }
+.live-badge { background:rgba(61,220,132,0.12); border:1px solid rgba(61,220,132,0.4); color:var(--uz-green); padding:6px 14px; border-radius:999px; font-size:0.82em; font-weight:600; white-space:nowrap; }
+.live-badge .dot { display:inline-block; width:7px; height:7px; background:var(--uz-green); border-radius:50%; margin-right:6px; }
+.status-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:18px; }
+.pill { padding:7px 14px; border-radius:999px; font-size:0.82em; font-weight:500; border:1px solid var(--uz-border); }
+.pill.stack { background:rgba(99,102,217,0.14); border-color:rgba(99,102,217,0.4); color:#b9baf5; }
+.pill.wer { background:rgba(232,114,44,0.14); border-color:rgba(232,114,44,0.4); color:var(--uz-orange-soft); }
+.pill .dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:7px; }
+.pill.stack .dot { background:var(--uz-indigo); }
+.pill.wer .dot { background:var(--uz-orange); }
+.section-card, .gr-group { background:var(--uz-card) !important; border:1px solid var(--uz-border) !important; border-radius:14px !important; }
+.card-head { display:flex; align-items:center; gap:12px; margin-bottom:2px; }
+.card-num { width:26px; height:26px; border-radius:50%; background:var(--uz-card2); border:1px solid var(--uz-border); color:var(--uz-muted); display:flex; align-items:center; justify-content:center; font-size:0.85em; font-weight:600; }
+.card-title { color:var(--uz-text); font-weight:600; font-size:1.02em; }
+.voice-title { color:var(--uz-text); font-weight:600; font-size:1.15em; }
+.voice-hint { color:var(--uz-muted); font-size:0.88em; margin:6px 0 2px; }
+.examples-head { font-weight:600; color:var(--uz-text); margin:2px 0 12px; font-size:1.0em; }
+.examples-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.example-card { background:var(--uz-card2); border:1px solid var(--uz-border); border-radius:12px; padding:14px 16px; transition:all 0.18s ease; }
+.example-card:hover { border-color:var(--uz-orange); transform:translateY(-1px); }
+.example-card .icon { font-size:1.35em; margin-bottom:4px; }
+.example-card .topic { font-weight:600; font-size:0.9em; color:var(--uz-text); margin-bottom:3px; }
+.example-card .question { font-size:0.85em; color:var(--uz-muted); font-style:italic; line-height:1.4; }
+button.primary { background:var(--uz-orange) !important; border:none !important; color:#1a0d04 !important; font-weight:600 !important; font-size:1.02em !important; }
+button.primary:hover { background:#f0842f !important; }
+.disclaimer { margin-top:20px; padding:14px 18px; background:rgba(232,114,44,0.08); border-left:4px solid var(--uz-orange); border-radius:8px; font-size:0.88em; color:#f0c9a8; }
+.disclaimer strong { color:var(--uz-orange); }
+.credits { text-align:center; font-size:0.78em; color:var(--uz-muted); margin-top:14px; padding:8px; }
+@media (max-width:768px){ .examples-grid{ grid-template-columns:1fr; } .hero h1{ font-size:1.5em !important; } }
 """
 
 
 def hero_html():
-    llm_short = LLM_MODEL.split("/")[-1]
     return f"""
     <div class="hero">
-      <h1>🩺 UBUZIMA AI</h1>
-      <p class="tagline">Kinyarwanda voice health assistant</p>
-      <p>Speak a health question, get a spoken answer in Kinyarwanda</p>
+      <div class="hero-top">
+        <div class="hero-id">
+          <div class="hero-logo">\U0001FA7A</div>
+          <div>
+            <h1>UBUZIMA AI</h1>
+            <p class="tagline">{TXT['tagline']}</p>
+          </div>
+        </div>
+        <span class="live-badge"><span class="dot"></span>{TXT['live']}</span>
+      </div>
+      <p class="tagline" style="margin-top:14px;">{TXT['subtitle']}</p>
       <div class="status-row">
-        <span class="status-pill"><span class="dot"></span> ASR: badrex + LoRA</span>
-        <span class="status-pill"><span class="dot"></span> LLM: {llm_short}</span>
-        <span class="status-pill"><span class="dot"></span> TTS: {TTS_LABEL}</span>
+        <span class="pill stack"><span class="dot"></span>{TXT['pill_asr']}</span>
+        <span class="pill stack"><span class="dot"></span>{TXT['pill_llm']}</span>
+        <span class="pill stack"><span class="dot"></span>TTS: {TTS_LABEL}</span>
+        <span class="pill wer"><span class="dot"></span>{TXT['pill_wer']}</span>
       </div>
     </div>
     """
@@ -305,92 +349,81 @@ def examples_html():
           <div class="question">"{q}"</div>
         </div>
         """
-    return f"""
-    <div>
-      <div style="font-weight:600;color:var(--primary-dark);margin:0 0 12px;">💡 Suggested questions to ask</div>
-      <div class="examples-grid">{cards}</div>
-    </div>
-    """
+    return f'<div class="examples-head">{TXT["examples_head"]}</div><div class="examples-grid">{cards}</div>'
 
 
-def howto_html():
-    return """
-    <div class="howto">
-      <strong>How to use:</strong>
-      <ol style="margin:6px 0 0 18px;padding:0;">
-        <li>Click <strong>Record</strong> on the microphone</li>
-        <li>Speak your question in Kinyarwanda</li>
-        <li>Click <strong>Stop</strong> on the mic, wait 1-2 seconds for the waveform to settle</li>
-        <li>Click <strong>✨ Process question</strong></li>
-      </ol>
-    </div>
-    """
+def card_head(num, title):
+    return f'<div class="card-head"><div class="card-num">{num}</div><div class="card-title">{title}</div></div>'
 
 
 def footer_html():
     return f"""
     <div class="disclaimer">
-      <strong>⚠️ Research demo only.</strong> Not a medical diagnosis tool.
-      Always consult a qualified healthcare professional for medical concerns.
+      <strong>{TXT['disc_strong']}</strong> {TXT['disc_body']}
     </div>
     <div class="credits">
-      Built on
-      <a href="https://huggingface.co/badrex/w2v-bert-2.0-kinyarwanda-asr" target="_blank">badrex/w2v-bert-2.0-kinyarwanda-asr</a>
-      · Fine-tuned with LoRA on Afrivoice + Common Voice Kinyarwanda · TTS: {TTS_LABEL}
-      <br><em>URURIMI / UBUZIMA AI capstone — African Leadership University, Kigali</em>
+      badrex ASR + LoRA (Afrivoice + Common Voice) \u00B7 Gemini 2.5 Flash \u00B7 {TTS_LABEL}
+      <br>URURIMI / UBUZIMA AI \u2014 African Leadership University, Kigali
     </div>
     """
 
 
-theme = gr.themes.Soft(
-    primary_hue=gr.themes.colors.teal,
-    secondary_hue=gr.themes.colors.orange,
+theme = gr.themes.Base(
+    primary_hue=gr.themes.colors.orange,
     neutral_hue=gr.themes.colors.gray,
     font=[gr.themes.GoogleFont("Inter"), "system-ui", "sans-serif"],
     radius_size=gr.themes.sizes.radius_lg,
-).set(
-    button_primary_background_fill="*primary_600",
-    button_primary_background_fill_hover="*primary_700",
 )
 
-with gr.Blocks(title="UBUZIMA AI", theme=theme, css=CUSTOM_CSS) as demo:
+# Force dark mode on load so the CSS palette always applies.
+FORCE_DARK_JS = """
+function() {
+  const url = new URL(window.location);
+  if (url.searchParams.get('__theme') !== 'dark') {
+    url.searchParams.set('__theme', 'dark');
+    window.location.replace(url.href);
+  }
+}
+"""
+
+with gr.Blocks(title="UBUZIMA AI", theme=theme, css=CUSTOM_CSS, js=FORCE_DARK_JS) as demo:
     gr.HTML(hero_html())
-    gr.HTML(howto_html())
 
     with gr.Row():
         with gr.Column(scale=1):
             with gr.Group(elem_classes=["section-card"]):
-                gr.Markdown("### 🎙️ Speak your question")
+                gr.HTML(f'<div class="voice-title">\U0001F3A4 {TXT["voice_card"]}</div>'
+                        f'<div class="voice-hint">{TXT["voice_hint"]}</div>')
                 audio_in = gr.Audio(
                     sources=["microphone"],
                     type="numpy",
                     label="",
                     show_label=False,
                     waveform_options=gr.WaveformOptions(
-                        waveform_color="#00897b",
-                        waveform_progress_color="#00bfa5",
+                        waveform_color="#e8722c",
+                        waveform_progress_color="#f0997b",
                     ),
                 )
                 with gr.Row():
-                    submit = gr.Button("✨ Process question", variant="primary", size="lg", scale=3)
-                    clear = gr.Button("Clear", scale=1)
+                    submit = gr.Button(TXT["btn_run"], variant="primary", size="lg", scale=3)
+                    clear = gr.Button(TXT["btn_reset"], scale=1)
             gr.HTML(examples_html())
 
         with gr.Column(scale=1):
             with gr.Group(elem_classes=["section-card"]):
-                gr.Markdown("### 📝 What you said")
+                gr.HTML(card_head(1, TXT["card1"]))
                 transcript_out = gr.Textbox(
                     label="", show_label=False, lines=2, interactive=False,
-                    placeholder="Your transcribed question will appear here...",
+                    placeholder=TXT["card1_ph"],
                 )
             with gr.Group(elem_classes=["section-card"]):
-                gr.Markdown("### 💬 UBUZIMA AI says")
+                gr.HTML(card_head(2, TXT["card2"]))
                 answer_out = gr.Textbox(
                     label="", show_label=False, lines=5, interactive=False,
-                    placeholder="The AI's response in Kinyarwanda will appear here...",
+                    placeholder=TXT["card2_ph"],
                 )
             with gr.Group(elem_classes=["section-card"]):
-                gr.Markdown("### 🔊 Spoken answer")
+                gr.HTML(card_head(3, TXT["card3"]))
                 audio_out = gr.Audio(label="", show_label=False, type="numpy", autoplay=True)
 
     gr.HTML(footer_html())
@@ -407,8 +440,5 @@ with gr.Blocks(title="UBUZIMA AI", theme=theme, css=CUSTOM_CSS) as demo:
     )
 
 if __name__ == "__main__":
-    # server_name="0.0.0.0" + reading $PORT are both required for Railway.
-    # No share=True / debug=True here — those are Colab-only conveniences
-    # and don't belong in a production container.
     port = int(os.environ.get("PORT", 7860))
     demo.launch(server_name="0.0.0.0", server_port=port, show_error=True)
