@@ -39,6 +39,18 @@ REQUIRE_CONSENT = True
 # Shown in the Terms & Privacy tab. Set CONTACT_EMAIL in Railway.
 CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "d.ganza@alustudent.com")
 
+# --- ASR confidence gating -------------------------------------------------
+# Implemented in asr_confidence.py (report §5.2.5). Kept in its own module so the
+# scoring logic can be unit-tested and calibrated without loading Gradio, and so
+# app.py stays an orchestration layer rather than an algorithm dump.
+from asr_confidence import (
+    HIGH_CONF,
+    LOW_CONF,
+    confidence_band,
+    ctc_confidence,
+    resolve_blank_id,
+)
+
 # ==========================================================================
 # UI TEXT — Kinyarwanda strings in ONE place. Edit freely; you're the native
 # speaker. Nothing user-facing lives outside this block.
@@ -63,6 +75,17 @@ TXT = {
     "consent_label": "Ndemeye ko ijwi ryanjye rikoreshwa mu gutanga igisubizo (reba \u201cAmasezerano n'Ibanga\u201d).",
     "consent_note": "Uruhushya rurasabwa mbere yo gutangira. Soma amasezerano mu gace ka \u201cAmasezerano n'Ibanga\u201d haruguru.",
     "e_consent": "\u26A0\uFE0F Banza wemere uruhushya rwo gukoresha ijwi ryawe. Kanda agasanduku k'uruhushya hejuru y'iyi buto.",
+
+    # confidence gate
+    "conf_label": "Uko twumvise ijwi",
+    "conf_high": "Twumvise neza",
+    "conf_medium": "Ntitwumvise neza cyane \u2014 reba ko amagambo hepfo ari yo wavuze",
+    "conf_low": "Ntitwumvise neza",
+    "e_low_conf": ("\u26A0\uFE0F Ntitwumvise neza ijwi ryawe, bityo ntitwatanga igisubizo "
+                   "kuko twashobora gusubiza ikibazo kitari cyo wabajije. "
+                   "Ongera uvuge buhoro, mu kanwa gakuru, ahantu hatuje."),
+    "hedge_medium": ("\u26A0\uFE0F Icyitonderwa: ntitwumvise neza ijwi ryawe. "
+                     "Banza urebe ko amagambo twanditse ari yo wavuze mbere yo gukurikiza iki gisubizo."),
 
     "examples_head": "Ingero z'ibibazo washobora kubaza",
 
@@ -268,6 +291,11 @@ peft_config.task_type = None
 asr_model = PeftModel.from_pretrained(asr_base, ASR_ADAPTER, config=peft_config).to(DEVICE).eval()
 print("ASR ready (badrex + your LoRA adapter)")
 
+# CTC blank id — the pad token for Wav2Vec2-family models. Needed to exclude
+# blank frames from the confidence computation.
+CTC_BLANK_ID = resolve_blank_id(asr_processor, asr_base)
+print(f"CTC blank id: {CTC_BLANK_ID} | confidence gate: low<{LOW_CONF} high>={HIGH_CONF}")
+
 # --------------------------------------------------------------------------
 # Stage 3 — Load TTS (Meta MMS-TTS Kinyarwanda)
 # --------------------------------------------------------------------------
@@ -286,26 +314,11 @@ print("MMS-TTS ready")
 
 LLM_MODEL = "google/gemini-2.5-flash"
 
-# Safety rules (2) and (3) below are the guardrails described in the ethics
-# submission: no diagnosis, no medicines, no dosages, and escalation to a
-# human clinician for red-flag symptoms. Keep them if you change this prompt.
-SYSTEM_PROMPT = (
-    "URURIMI/UBUZIMA AI ni umufasha mu by'ubuzima utanga amakuru y'ibanze. "
-    "AMABWIRIZA Y'INGENZI: "
-    "(1) Subiza mu Kinyarwanda gusa, ntushyiremo amagambo y'icyongereza cyangwa imibare. "
-    "(2) NTUTANGE imiti, amazina y'imiti, cyangwa ingano y'imiti (dosage). "
-    "Nta n'ubwo usuzuma indwara ngo uvuge uti 'ufite iyi ndwara'. "
-    "Iyo umuntu agusabye imiti cyangwa gusuzumwa, umusubize neza ko utabishobora, "
-    "hanyuma umwereke ko agomba kubaza muganga cyangwa umujyanama w'ubuzima (CHW). "
-    "(3) Niba ikibazo gikomeye (umuriro mwinshi, kuruka amaraso, kubabara cyane k'umutima, "
-    "guhumeka nabi, kugagara, ababyeyi batwite bafite ibibazo), banza uvuge ko bagomba "
-    "kujya kwa muganga cyangwa guhamagara ubutabazi ako kanya. "
-    "(4) Andika interuro nke (2-4) zoroshye, zumvikana ku muntu wese. "
-    "(5) Ntiwivuge ko uri robot cyangwa AI — uvuge nk'umufasha w'ubuzima usanzwe. "
-    "Urugero rwo gusubiza: 'Malariya iterwa n'imibu. Kugira ngo wirinde, "
-    "koresha agasenge ko kurara, urindire ibibarafu mu rugo, kandi sura muganga "
-    "iyo ugize ibimenyetso.'"
-)
+# The safety prompt lives in safety_prompt.py so that app.py and
+# eval/safety_eval.py send byte-identical input. If the two ever diverged, the
+# refusal rate reported in the capstone would describe a system that is not the
+# one deployed. Report §4.1.4 documents this module.
+from safety_prompt import PROMPT_VERSION, SYSTEM_PROMPT, build_messages
 
 
 def llm_answer(user_text):
@@ -318,10 +331,7 @@ def llm_answer(user_text):
         },
         json={
             "model": LLM_MODEL,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_text},
-            ],
+            "messages": build_messages(user_text),
             "max_tokens": 200,
             "temperature": 0.3,
         },
@@ -355,8 +365,14 @@ def transcribe(audio_array, sample_rate):
     }
     with torch.no_grad():
         logits = asr_model(**inputs).logits
+
+    # Confidence is computed from the same forward pass — no extra cost.
+    conf, n_frames = ctc_confidence(logits, CTC_BLANK_ID)
+
     pred_ids = torch.argmax(logits, dim=-1).cpu().numpy()
-    return asr_processor.batch_decode(pred_ids)[0].strip()
+    text = asr_processor.batch_decode(pred_ids)[0].strip()
+    print(f"[transcribe] confidence={conf:.3f} non_blank_frames={n_frames} band={confidence_band(conf)}")
+    return text, conf
 
 
 def speak(text):
@@ -370,39 +386,71 @@ def speak(text):
     return wav, tts_model.config.sampling_rate
 
 
+def confidence_badge_html(conf, band):
+    """Small coloured badge shown next to the transcript. Visible on camera."""
+    colour = {"high": "#3ddc84", "medium": "#e8a72c", "low": "#e8722c"}[band]
+    label = {"high": TXT["conf_high"], "medium": TXT["conf_medium"],
+             "low": TXT["conf_low"]}[band]
+    return (
+        f'<div class="conf-badge" style="border-color:{colour};color:{colour}">'
+        f'<span class="conf-dot" style="background:{colour}"></span>'
+        f'{TXT["conf_label"]}: <strong>{conf:.2f}</strong> &nbsp;—&nbsp; {label}'
+        f'</div>'
+    )
+
+
 def safe_pipeline(audio_input, consent_given, progress=gr.Progress()):
-    """End-to-end ASR -> LLM -> TTS with consent gate, progress, graceful errors."""
+    """End-to-end ASR -> LLM -> TTS with consent gate, confidence gate,
+    progress reporting and graceful errors."""
+    blank_badge = ""
+
     # Consent gate — no audio is processed without affirmative consent.
     if REQUIRE_CONSENT and not consent_given:
-        return TXT["e_consent"], "\u2014", None
+        return TXT["e_consent"], "\u2014", None, blank_badge
 
     if audio_input is None:
-        return TXT["e_not_ready"], "\u2014", None
+        return TXT["e_not_ready"], "\u2014", None, blank_badge
 
     try:
         sample_rate, audio_array = audio_input
     except Exception as e:
-        return TXT["e_format"].format(e=e), "\u2014", None
+        return TXT["e_format"].format(e=e), "\u2014", None, blank_badge
 
     if audio_array is None or len(audio_array) == 0:
-        return TXT["e_empty"], "\u2014", None
+        return TXT["e_empty"], "\u2014", None, blank_badge
 
     progress(0.25, desc=TXT["p_asr"])
     try:
-        transcript = transcribe(audio_array, sample_rate)
+        transcript, confidence = transcribe(audio_array, sample_rate)
     except Exception as e:
         traceback.print_exc()
-        return TXT["e_asr"].format(t=type(e).__name__, e=e), "\u2014", None
+        return TXT["e_asr"].format(t=type(e).__name__, e=e), "\u2014", None, blank_badge
+
+    band = confidence_band(confidence)
+    badge = confidence_badge_html(confidence, band)
 
     if not transcript or len(transcript.strip()) < 2:
-        return TXT["e_unclear"], "\u2014", None
+        return TXT["e_unclear"], "\u2014", None, badge
+
+    # --- CONFIDENCE GATE (report §5.2.5) -----------------------------------
+    # Below the low threshold we do NOT call the language model at all. A
+    # garbled transcript would otherwise produce a fluent, confident answer to
+    # a question the user never asked — the most dangerous failure mode in a
+    # cascaded pipeline. Declining is safer than answering the wrong question.
+    if band == "low":
+        progress(1.0, desc=TXT["p_done"])
+        return transcript, TXT["e_low_conf"], None, badge
 
     progress(0.5, desc=TXT["p_llm"])
     try:
         answer = llm_answer(transcript)
     except Exception as e:
         traceback.print_exc()
-        return transcript, TXT["e_llm"].format(t=type(e).__name__, e=e), None
+        return transcript, TXT["e_llm"].format(t=type(e).__name__, e=e), None, badge
+
+    # Medium confidence: answer, but tell the user to check the transcript first.
+    if band == "medium":
+        answer = f"{answer}\n\n{TXT['hedge_medium']}"
 
     progress(0.85, desc=TXT["p_tts"])
     try:
@@ -410,10 +458,10 @@ def safe_pipeline(audio_input, consent_given, progress=gr.Progress()):
         audio_out = (sr, (wav * 32767).astype(np.int16)) if wav is not None else None
     except Exception as e:
         traceback.print_exc()
-        return transcript, f"{answer}\n\n{TXT['e_tts'].format(e=e)}", None
+        return transcript, f"{answer}\n\n{TXT['e_tts'].format(e=e)}", None, badge
 
     progress(1.0, desc=TXT["p_done"])
-    return transcript, answer, audio_out
+    return transcript, answer, audio_out, badge
 
 
 print("Pipeline ready")
@@ -421,6 +469,8 @@ print(f"  ASR: badrex + LoRA")
 print(f"  LLM: {LLM_MODEL} (via OpenRouter)")
 print(f"  TTS: {TTS_LABEL}")
 print(f"  Consent gate: {'ON' if REQUIRE_CONSENT else 'OFF'}")
+print(f"  Confidence gate: low<{LOW_CONF} / medium / high>={HIGH_CONF}")
+print(f"  Safety prompt  : {PROMPT_VERSION}")
 
 # --------------------------------------------------------------------------
 # Stage 6 — UI (dark theme, Kinyarwanda-first)
@@ -464,6 +514,9 @@ CUSTOM_CSS = """
 .voice-title { color:var(--uz-text); font-weight:600; font-size:1.15em; }
 .voice-hint { color:var(--uz-muted); font-size:0.88em; margin:6px 0 2px; }
 .consent-note { color:var(--uz-muted); font-size:0.8em; margin:2px 0 6px; font-style:italic; }
+.conf-badge { display:inline-flex; align-items:center; gap:8px; border:1px solid var(--uz-border);
+  border-radius:999px; padding:6px 14px; font-size:0.85em; margin:6px 0 2px; background:var(--uz-card2); }
+.conf-dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
 .examples-head { font-weight:600; color:var(--uz-text); margin:2px 0 12px; font-size:1.0em; }
 .examples-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .example-card { background:var(--uz-card2); border:1px solid var(--uz-border); border-radius:12px; padding:14px 16px; transition:all 0.18s ease; }
@@ -661,6 +714,7 @@ with demo:
                             label="", show_label=False, lines=2, interactive=False,
                             placeholder=TXT["card1_ph"],
                         )
+                        confidence_out = gr.HTML(value="")
                     with gr.Group(elem_classes=["section-card"]):
                         gr.HTML(card_head(2, TXT["card2"]))
                         answer_out = gr.Textbox(
@@ -680,12 +734,12 @@ with demo:
     submit.click(
         safe_pipeline,
         inputs=[audio_in, consent_box],
-        outputs=[transcript_out, answer_out, audio_out],
+        outputs=[transcript_out, answer_out, audio_out, confidence_out],
         show_progress="full",
     )
     clear.click(
-        lambda: (None, "", "", None),
-        outputs=[audio_in, transcript_out, answer_out, audio_out],
+        lambda: (None, "", "", None, ""),
+        outputs=[audio_in, transcript_out, answer_out, audio_out, confidence_out],
     )
 
 if __name__ == "__main__":
