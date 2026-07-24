@@ -9,6 +9,7 @@ Required environment variables (set these in Railway's dashboard, never
 hardcode them):
     OPENROUTER_API_KEY   - from openrouter.ai/keys
     HF_TOKEN             - optional, only needed if badrex's model is gated
+    CONTACT_EMAIL        - optional, shown in the Terms & Privacy tab
 
 Local run:
     pip install -r requirements.txt
@@ -28,6 +29,17 @@ import torch
 import gradio as gr
 
 # ==========================================================================
+# GOVERNANCE SWITCHES
+# ==========================================================================
+
+# Affirmative consent before the microphone input is processed.
+# Set to False if you would rather demo without the consent gate.
+REQUIRE_CONSENT = True
+
+# Shown in the Terms & Privacy tab. Set CONTACT_EMAIL in Railway.
+CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "d.ganza@alustudent.com")
+
+# ==========================================================================
 # UI TEXT — Kinyarwanda strings in ONE place. Edit freely; you're the native
 # speaker. Nothing user-facing lives outside this block.
 # ==========================================================================
@@ -40,10 +52,17 @@ TXT = {
     "pill_llm": "LLM: Gemini 2.5 Flash",
     "pill_wer": "WER: 6.76% ubuzima / 31.29% rusange",
 
+    "tab_main": "\U0001FA7A Ubuzima AI",
+    "tab_terms": "\U0001F512 Amasezerano n'Ibanga",
+
     "voice_card": "Baza amajwi hano",
     "voice_hint": "Kanda mikoro, uvuge ikibazo cyawe, hanyuma ukande \u201cTanga igisubizo\u201d.",
     "btn_run": "\u25B6 Tanga igisubizo",
     "btn_reset": "\u21BA Siba",
+
+    "consent_label": "Ndemeye ko ijwi ryanjye rikoreshwa mu gutanga igisubizo (reba \u201cAmasezerano n'Ibanga\u201d).",
+    "consent_note": "Uruhushya rurasabwa mbere yo gutangira. Soma amasezerano mu gace ka \u201cAmasezerano n'Ibanga\u201d haruguru.",
+    "e_consent": "\u26A0\uFE0F Banza wemere uruhushya rwo gukoresha ijwi ryawe. Kanda agasanduku k'uruhushya hejuru y'iyi buto.",
 
     "examples_head": "Ingero z'ibibazo washobora kubaza",
 
@@ -69,6 +88,138 @@ TXT = {
     "disc_strong": "\u26A0\uFE0F Iyi ni porototipe y'ubushakashatsi gusa.",
     "disc_body": "Si igikoresho cyo gusuzuma indwara. Buri gihe jya kwa muganga cyangwa CHW iyo ufite ikibazo cy'ubuzima.",
 }
+
+# ==========================================================================
+# TERMS OF USE AND PRIVACY NOTICE
+# Bilingual: Kinyarwanda for users, English for assessment and review.
+# NOTE: review and correct the Kinyarwanda wording — you are the native speaker.
+# ==========================================================================
+
+TERMS_INTRO_RW = (
+    "Aya masezerano asobanura icyo iyi porogaramu ari cyo, uko ijwi ryawe rikoreshwa, "
+    "n'uburenganzira ufite. Nyamuneka soma mbere yo gukoresha serivisi."
+)
+TERMS_INTRO_EN = (
+    "This notice explains what the service is, how your voice input is used, and what "
+    "rights you have. Please read it before using the assistant."
+)
+
+TERMS_UPDATED = "Iheruka guhindurwa / Last updated: 24 Nyakanga 2026"
+
+CLAUSES = [
+    dict(
+        n=1,
+        title_rw="Icyo iyi porogaramu ari cyo",
+        title_en="Purpose and scope",
+        rw=("UBUZIMA AI ni umufasha utanga amakuru rusange y'ubuzima mu Kinyarwanda. "
+            "Ikoresha ikoranabuhanga ryumva ijwi (ASR), urwego rusubiza (LLM), n'irivuga igisubizo (TTS). "
+            "Ni porototipe y'ubushakashatsi yakozwe nk'umushinga wa kaminuza. "
+            "Si igikoresho cyo kuvura kandi si serivisi ya muganga."),
+        en=("UBUZIMA AI is an informational health assistant that answers general health questions in "
+            "Kinyarwanda using speech recognition, a language model, and speech synthesis. It is a "
+            "research prototype built as a university capstone project. It is not a medical device and "
+            "is not a clinical service."),
+        key=False,
+    ),
+    dict(
+        n=2,
+        title_rw="Si inama za muganga",
+        title_en="Not medical advice",
+        rw=("Iyi porogaramu ntisuzuma indwara, kandi ntitanga imiti cyangwa ingano y'imiti. "
+            "Ibisubizo ni amakuru rusange gusa; ntibisimbura muganga cyangwa umujyanama w'ubuzima. "
+            "Niba ikibazo gikomeye cyangwa kirushaho kwiyongera, jya kwa muganga cyangwa "
+            "uhamagare ubutabazi ako kanya."),
+        en=("The assistant does not diagnose conditions and does not prescribe or recommend medicines or "
+            "dosages. Its responses are general health information only and are not a substitute for a "
+            "qualified health professional. If your situation is urgent or worsening, contact a health "
+            "facility or emergency services immediately. This matters because a spoken answer in your own "
+            "language can feel authoritative; the assistant is designed to point you toward care, not to "
+            "replace it."),
+        key=True,
+    ),
+    dict(
+        n=3,
+        title_rw="Uko ijwi ryawe n'amakuru bikoreshwa",
+        title_en="Voice and data use",
+        rw=("Ijwi ryawe rikoreshwa gusa mu gutanga igisubizo. Ntiribikwa hamwe n'amakuru akuranga, "
+            "kandi ntidukora dosiye y'umuntu ku giti cye. Amakuru yawe ntagurishwa kandi "
+            "ntakoreshwa mu kwamamaza. Bimwe mu bikorwa bishobora gukorerwa ku bafatanyabikorwa "
+            "bo hanze y'u Rwanda, kandi twohereza gusa ibya ngombwa."),
+        en=("Your spoken input is processed only to generate a response. Audio is not retained alongside "
+            "information that identifies you, and no profile of you is built. Your data is never sold and "
+            "is not used for advertising. Some processing is carried out by service providers located "
+            "outside Rwanda, and only the minimum necessary is transmitted. Temporary audio files created "
+            "by the interface are cleared automatically."),
+        key=True,
+    ),
+    dict(
+        n=4,
+        title_rw="Uruhushya rwawe",
+        title_en="Consent",
+        rw=("Mbere yo gutangira, usabwa kwemera ko ijwi ryawe rikoreshwa nk'uko byasobanuwe haruguru. "
+            "Ushobora guhagarika gukoresha iyi porogaramu igihe icyo ari cyo cyose. "
+            "Ntukoreshe ijwi cyangwa amakuru y'undi muntu utabanje kubimubaza, "
+            "kandi ntutange amakuru wifuza ko atamenyekana."),
+        en=("Affirmative consent is required before any audio is processed. You may stop using the service "
+            "at any time, and withdrawing consent does not affect processing already carried out. Please "
+            "do not submit another person's voice or personal information without their consent, and avoid "
+            "sharing details you would not wish to be processed."),
+        key=False,
+    ),
+    dict(
+        n=5,
+        title_rw="Umutekano",
+        title_en="Security",
+        rw=("Dukoresha uburyo bwa tekiniki bukwiye bwo kurinda iyi serivisi, harimo kubika neza "
+            "imfunguzo za sisitemu ku buryo zitagaragara mu ikode. Nta serivisi yo kuri interineti "
+            "ishobora kwemeza umutekano wuzuye."),
+        en=("Reasonable technical and organisational measures protect the service, including keeping "
+            "application credentials in environment variables rather than in source code, and restricting "
+            "access to system configuration. No online service can be guaranteed completely secure, and "
+            "this is stated plainly rather than implied otherwise."),
+        key=False,
+    ),
+    dict(
+        n=6,
+        title_rw="Aho ubushobozi bugarukira",
+        title_en="Limitations and accuracy",
+        rw=("Ubushobozi bwo kumva ijwi buratandukana bitewe n'imvugo, ururimi rw'akarere, urusaku, "
+            "n'ikibazo ubajije. Sisitemu ikora neza ku bibazo by'ubuzima (WER 6.76%) kurusha "
+            "ibiganiro rusange (WER 31.29%). Ishobora kwibeshya. Koresha ubwenge bwawe, "
+            "kandi ujye kwa muganga igihe bikenewe."),
+        en=("Recognition accuracy varies with accent, dialect, background noise, and topic. Measured word "
+            "error rate is 6.76% on health speech and 31.29% on general speech, so performance is "
+            "noticeably weaker outside the health domain. The assistant can be wrong. A voice-first "
+            "interface also does not serve deaf or hard-of-hearing users, and the system is limited to "
+            "Kinyarwanda by design."),
+        key=False,
+    ),
+    dict(
+        n=7,
+        title_rw="Uburenganzira bwawe",
+        title_en="Your rights",
+        rw=("Hakurikijwe Itegeko n\u00B0 058/2021 ryerekeye kurengera amakuru bwite n'ubuzima bwite, "
+            "ufite uburenganzira bwo kumenya uko amakuru yawe akoreshwa, kuyabona, gusaba ko akosorwa "
+            "cyangwa asibwa, kwanga ko akoreshwa, no kujuririra urwego rubishinzwe. "
+            f"Kugira ngo ubikoreshe, twandikire kuri {CONTACT_EMAIL}."),
+        en=("Under Rwanda's Law No. 058/2021 relating to the protection of personal data and privacy, you "
+            "have the right to be informed about how your personal data is processed, to access it, to "
+            "request rectification or erasure, to object to processing, and to appeal to the supervisory "
+            f"authority. To exercise these rights, contact {CONTACT_EMAIL}. Rights that are never "
+            "communicated cannot be exercised, which is why they are stated here."),
+        key=True,
+    ),
+    dict(
+        n=8,
+        title_rw="Impinduka n'aho watubona",
+        title_en="Changes and contact",
+        rw=("Aya masezerano ashobora guhinduka; inyandiko iri muri iyi porogaramu ni yo ikurikizwa. "
+            f"Ibibazo, ibirego cyangwa ibitekerezo: {CONTACT_EMAIL}."),
+        en=("This notice may be updated, and the version published in the system governs your use. "
+            f"Questions, complaints, or requests may be sent to {CONTACT_EMAIL}."),
+        key=False,
+    ),
+]
 
 # --------------------------------------------------------------------------
 # Stage 1 — Config and auth (no interactive prompts — env vars only)
@@ -135,14 +286,22 @@ print("MMS-TTS ready")
 
 LLM_MODEL = "google/gemini-2.5-flash"
 
+# Safety rules (2) and (3) below are the guardrails described in the ethics
+# submission: no diagnosis, no medicines, no dosages, and escalation to a
+# human clinician for red-flag symptoms. Keep them if you change this prompt.
 SYSTEM_PROMPT = (
-    "URURIMI/UBUZIMA AI ni umufasha mu by'ubuzima utanga inama z'ibanze. "
+    "URURIMI/UBUZIMA AI ni umufasha mu by'ubuzima utanga amakuru y'ibanze. "
     "AMABWIRIZA Y'INGENZI: "
     "(1) Subiza mu Kinyarwanda gusa, ntushyiremo amagambo y'icyongereza cyangwa imibare. "
-    "(2) Andika interuro nke (2-4) zoroshye, zumvikana ku muntu wese. "
+    "(2) NTUTANGE imiti, amazina y'imiti, cyangwa ingano y'imiti (dosage). "
+    "Nta n'ubwo usuzuma indwara ngo uvuge uti 'ufite iyi ndwara'. "
+    "Iyo umuntu agusabye imiti cyangwa gusuzumwa, umusubize neza ko utabishobora, "
+    "hanyuma umwereke ko agomba kubaza muganga cyangwa umujyanama w'ubuzima (CHW). "
     "(3) Niba ikibazo gikomeye (umuriro mwinshi, kuruka amaraso, kubabara cyane k'umutima, "
-    "ababyeyi batwite bafite ibibazo), vuga ko bagomba kujya kwa muganga vuba. "
-    "(4) Ntiwivuge ko uri robot cyangwa AI — uvuge nk'umufasha w'ubuzima usanzwe. "
+    "guhumeka nabi, kugagara, ababyeyi batwite bafite ibibazo), banza uvuge ko bagomba "
+    "kujya kwa muganga cyangwa guhamagara ubutabazi ako kanya. "
+    "(4) Andika interuro nke (2-4) zoroshye, zumvikana ku muntu wese. "
+    "(5) Ntiwivuge ko uri robot cyangwa AI — uvuge nk'umufasha w'ubuzima usanzwe. "
     "Urugero rwo gusubiza: 'Malariya iterwa n'imibu. Kugira ngo wirinde, "
     "koresha agasenge ko kurara, urindire ibibarafu mu rugo, kandi sura muganga "
     "iyo ugize ibimenyetso.'"
@@ -211,8 +370,12 @@ def speak(text):
     return wav, tts_model.config.sampling_rate
 
 
-def safe_pipeline(audio_input, progress=gr.Progress()):
-    """End-to-end ASR -> LLM -> TTS with visible progress and graceful errors."""
+def safe_pipeline(audio_input, consent_given, progress=gr.Progress()):
+    """End-to-end ASR -> LLM -> TTS with consent gate, progress, graceful errors."""
+    # Consent gate — no audio is processed without affirmative consent.
+    if REQUIRE_CONSENT and not consent_given:
+        return TXT["e_consent"], "\u2014", None
+
     if audio_input is None:
         return TXT["e_not_ready"], "\u2014", None
 
@@ -257,6 +420,7 @@ print("Pipeline ready")
 print(f"  ASR: badrex + LoRA")
 print(f"  LLM: {LLM_MODEL} (via OpenRouter)")
 print(f"  TTS: {TTS_LABEL}")
+print(f"  Consent gate: {'ON' if REQUIRE_CONSENT else 'OFF'}")
 
 # --------------------------------------------------------------------------
 # Stage 6 — UI (dark theme, Kinyarwanda-first)
@@ -299,6 +463,7 @@ CUSTOM_CSS = """
 .card-title { color:var(--uz-text); font-weight:600; font-size:1.02em; }
 .voice-title { color:var(--uz-text); font-weight:600; font-size:1.15em; }
 .voice-hint { color:var(--uz-muted); font-size:0.88em; margin:6px 0 2px; }
+.consent-note { color:var(--uz-muted); font-size:0.8em; margin:2px 0 6px; font-style:italic; }
 .examples-head { font-weight:600; color:var(--uz-text); margin:2px 0 12px; font-size:1.0em; }
 .examples-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .example-card { background:var(--uz-card2); border:1px solid var(--uz-border); border-radius:12px; padding:14px 16px; transition:all 0.18s ease; }
@@ -311,7 +476,25 @@ button.primary:hover { background:#f0842f !important; }
 .disclaimer { margin-top:20px; padding:14px 18px; background:rgba(232,114,44,0.08); border-left:4px solid var(--uz-orange); border-radius:8px; font-size:0.88em; color:#f0c9a8; }
 .disclaimer strong { color:var(--uz-orange); }
 .credits { text-align:center; font-size:0.78em; color:var(--uz-muted); margin-top:14px; padding:8px; }
-@media (max-width:768px){ .examples-grid{ grid-template-columns:1fr; } .hero h1{ font-size:1.5em !important; } }
+
+/* ---- Terms & Privacy tab ---- */
+.terms-wrap { background:var(--uz-card); border:1px solid var(--uz-border); border-radius:16px; padding:26px 30px; }
+.terms-wrap h2 { color:var(--uz-orange) !important; font-size:1.5em !important; margin:0 0 6px !important; }
+.terms-intro { color:var(--uz-text); font-size:0.94em; line-height:1.6; margin:0 0 4px; }
+.terms-intro.en { color:var(--uz-muted); font-style:italic; }
+.terms-updated { color:var(--uz-muted); font-size:0.78em; margin:10px 0 20px; }
+.clause { background:var(--uz-card2); border:1px solid var(--uz-border); border-left:4px solid var(--uz-border); border-radius:12px; padding:16px 20px; margin-bottom:12px; }
+.clause.key { border-left-color:var(--uz-orange); background:rgba(232,114,44,0.06); }
+.clause-title { display:flex; align-items:baseline; gap:10px; margin-bottom:8px; flex-wrap:wrap; }
+.clause-n { width:24px; height:24px; min-width:24px; border-radius:50%; background:var(--uz-orange); color:#1a0d04; display:inline-flex; align-items:center; justify-content:center; font-size:0.8em; font-weight:700; }
+.clause-rw { color:var(--uz-text); font-weight:600; font-size:1.02em; }
+.clause-en-t { color:var(--uz-muted); font-size:0.85em; font-style:italic; }
+.clause p { margin:0 0 8px; line-height:1.6; }
+.clause .rw { color:var(--uz-text); font-size:0.92em; }
+.clause .en { color:var(--uz-muted); font-size:0.86em; }
+.key-badge { background:rgba(232,114,44,0.18); border:1px solid rgba(232,114,44,0.45); color:var(--uz-orange-soft); font-size:0.68em; padding:2px 8px; border-radius:999px; font-weight:600; letter-spacing:0.3px; }
+.legal-foot { margin-top:18px; padding:14px 18px; background:var(--uz-card2); border:1px solid var(--uz-border); border-radius:10px; font-size:0.82em; color:var(--uz-muted); line-height:1.6; }
+@media (max-width:768px){ .examples-grid{ grid-template-columns:1fr; } .hero h1{ font-size:1.5em !important; } .terms-wrap{ padding:18px; } }
 """
 
 
@@ -356,6 +539,44 @@ def card_head(num, title):
     return f'<div class="card-head"><div class="card-num">{num}</div><div class="card-title">{title}</div></div>'
 
 
+def terms_html():
+    """Dedicated Terms of Use and Privacy Notice — navigate here in the video."""
+    body = ""
+    for c in CLAUSES:
+        badge = '<span class="key-badge">INGENZI / KEY</span>' if c["key"] else ""
+        body += f"""
+        <div class="clause{' key' if c['key'] else ''}">
+          <div class="clause-title">
+            <span class="clause-n">{c['n']}</span>
+            <span class="clause-rw">{c['title_rw']}</span>
+            <span class="clause-en-t">{c['title_en']}</span>
+            {badge}
+          </div>
+          <p class="rw">{c['rw']}</p>
+          <p class="en">{c['en']}</p>
+        </div>
+        """
+    return f"""
+    <div class="terms-wrap">
+      <h2>\U0001F512 Amasezerano y'Ikoreshwa n'Itangazo ry'Ibanga</h2>
+      <p class="terms-intro">{TERMS_INTRO_RW}</p>
+      <p class="terms-intro en">Terms of Use and Privacy Notice \u2014 {TERMS_INTRO_EN}</p>
+      <p class="terms-updated">{TERMS_UPDATED}</p>
+      {body}
+      <div class="legal-foot">
+        <strong>Amategeko akurikizwa / Governing frameworks.</strong>
+        Itegeko n\u00B0 058/2021 ryerekeye kurengera amakuru bwite n'ubuzima bwite (Republic of Rwanda);
+        African Union Convention on Cyber Security and Personal Data Protection (2014);
+        WHO guidance on the ethics and governance of artificial intelligence for health (2021);
+        UNESCO Recommendation on the Ethics of Artificial Intelligence (2021).
+        <br><br>
+        Uyu mushinga wemejwe na Komite y'Ubushakashatsi bw'Imyitwarire ya ALU
+        (ALU Senate Research Ethics Committee), nomero M26-BSE-112, 22 Nyakanga 2026.
+      </div>
+    </div>
+    """
+
+
 def footer_html():
     return f"""
     <div class="disclaimer">
@@ -386,51 +607,79 @@ function() {
 }
 """
 
-with gr.Blocks(title="UBUZIMA AI", theme=theme, css=CUSTOM_CSS, js=FORCE_DARK_JS) as demo:
+# analytics_enabled=False stops Gradio telemetry; delete_cache clears temporary
+# audio files, which is what makes the retention clause in the notice true.
+_blocks_kwargs = dict(
+    title="UBUZIMA AI",
+    theme=theme,
+    css=CUSTOM_CSS,
+    js=FORCE_DARK_JS,
+    analytics_enabled=False,
+)
+try:
+    demo = gr.Blocks(**_blocks_kwargs, delete_cache=(1800, 1800))
+except TypeError:
+    # Older Gradio without delete_cache support.
+    demo = gr.Blocks(**_blocks_kwargs)
+
+with demo:
     gr.HTML(hero_html())
 
-    with gr.Row():
-        with gr.Column(scale=1):
-            with gr.Group(elem_classes=["section-card"]):
-                gr.HTML(f'<div class="voice-title">\U0001F3A4 {TXT["voice_card"]}</div>'
-                        f'<div class="voice-hint">{TXT["voice_hint"]}</div>')
-                audio_in = gr.Audio(
-                    sources=["microphone"],
-                    type="numpy",
-                    label="",
-                    show_label=False,
-                    waveform_options=gr.WaveformOptions(
-                        waveform_color="#e8722c",
-                        waveform_progress_color="#f0997b",
-                    ),
-                )
-                with gr.Row():
-                    submit = gr.Button(TXT["btn_run"], variant="primary", size="lg", scale=3)
-                    clear = gr.Button(TXT["btn_reset"], scale=1)
-            gr.HTML(examples_html())
+    with gr.Tabs():
+        # ---------------- Tab 1: the assistant ----------------
+        with gr.Tab(TXT["tab_main"]):
+            with gr.Row():
+                with gr.Column(scale=1):
+                    with gr.Group(elem_classes=["section-card"]):
+                        gr.HTML(f'<div class="voice-title">\U0001F3A4 {TXT["voice_card"]}</div>'
+                                f'<div class="voice-hint">{TXT["voice_hint"]}</div>')
+                        audio_in = gr.Audio(
+                            sources=["microphone"],
+                            type="numpy",
+                            label="",
+                            show_label=False,
+                            waveform_options=gr.WaveformOptions(
+                                waveform_color="#e8722c",
+                                waveform_progress_color="#f0997b",
+                            ),
+                        )
+                        consent_box = gr.Checkbox(
+                            label=TXT["consent_label"],
+                            value=False,
+                            interactive=True,
+                        )
+                        gr.HTML(f'<div class="consent-note">{TXT["consent_note"]}</div>')
+                        with gr.Row():
+                            submit = gr.Button(TXT["btn_run"], variant="primary", size="lg", scale=3)
+                            clear = gr.Button(TXT["btn_reset"], scale=1)
+                    gr.HTML(examples_html())
 
-        with gr.Column(scale=1):
-            with gr.Group(elem_classes=["section-card"]):
-                gr.HTML(card_head(1, TXT["card1"]))
-                transcript_out = gr.Textbox(
-                    label="", show_label=False, lines=2, interactive=False,
-                    placeholder=TXT["card1_ph"],
-                )
-            with gr.Group(elem_classes=["section-card"]):
-                gr.HTML(card_head(2, TXT["card2"]))
-                answer_out = gr.Textbox(
-                    label="", show_label=False, lines=5, interactive=False,
-                    placeholder=TXT["card2_ph"],
-                )
-            with gr.Group(elem_classes=["section-card"]):
-                gr.HTML(card_head(3, TXT["card3"]))
-                audio_out = gr.Audio(label="", show_label=False, type="numpy", autoplay=True)
+                with gr.Column(scale=1):
+                    with gr.Group(elem_classes=["section-card"]):
+                        gr.HTML(card_head(1, TXT["card1"]))
+                        transcript_out = gr.Textbox(
+                            label="", show_label=False, lines=2, interactive=False,
+                            placeholder=TXT["card1_ph"],
+                        )
+                    with gr.Group(elem_classes=["section-card"]):
+                        gr.HTML(card_head(2, TXT["card2"]))
+                        answer_out = gr.Textbox(
+                            label="", show_label=False, lines=5, interactive=False,
+                            placeholder=TXT["card2_ph"],
+                        )
+                    with gr.Group(elem_classes=["section-card"]):
+                        gr.HTML(card_head(3, TXT["card3"]))
+                        audio_out = gr.Audio(label="", show_label=False, type="numpy", autoplay=True)
+
+        # ---------------- Tab 2: Terms & Privacy (walk through on camera) ----------------
+        with gr.Tab(TXT["tab_terms"]):
+            gr.HTML(terms_html())
 
     gr.HTML(footer_html())
 
     submit.click(
         safe_pipeline,
-        inputs=audio_in,
+        inputs=[audio_in, consent_box],
         outputs=[transcript_out, answer_out, audio_out],
         show_progress="full",
     )
