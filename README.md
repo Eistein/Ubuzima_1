@@ -7,7 +7,11 @@ An End-to-End Kinyarwanda Voice Health Assistant Integrating Automatic Speech Re
 **Institution:** African Leadership University, Kigali, Rwanda  
 **Date:** July 2026
 
-**Live Demo:** [https://ubuzima1-production.up.railway.app](https://ubuzima1-production.up.railway.app)
+**Live Demo (Railway, CPU-only):** [https://ubuzima1-production.up.railway.app](https://ubuzima1-production.up.railway.app)
+
+> ⚠️ **The Railway demo runs on CPU only and is slow** — roughly 10min per turn, plus a cold start while the models load. To try the **same code** with GPU-speed latency, run the one-click **[Quick Demo notebook](#quick-demo-google-colab-gpu)** on Google Colab:
+>
+> [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Eistein/Ubuzima_1/blob/Master/Quick_demo.ipynb)
 
 ---
 
@@ -18,14 +22,15 @@ An End-to-End Kinyarwanda Voice Health Assistant Integrating Automatic Speech Re
 3. [Installation](#installation)
 4. [Environment Setup](#environment-setup)
 5. [Running the Application](#running-the-application)
-6. [Reproducing the Safety Evaluation](#reproducing-the-safety-evaluation)
-7. [Deployment](#deployment)
-8. [Project Structure](#project-structure)
-9. [Safety and Ethics](#safety-and-ethics)
-10. [Limitations](#limitations)
-11. [License](#license)
-12. [Citation](#citation)
-13. [Acknowledgements](#acknowledgements)
+6. [Quick Demo (Google Colab GPU)](#quick-demo-google-colab-gpu)
+7. [Reproducing the Safety Evaluation](#reproducing-the-safety-evaluation)
+8. [Deployment](#deployment)
+9. [Project Structure](#project-structure)
+10. [Safety and Ethics](#safety-and-ethics)
+11. [Limitations](#limitations)
+12. [License](#license)
+13. [Citation](#citation)
+14. [Acknowledgements](#acknowledgements)
 
 ---
 
@@ -159,6 +164,68 @@ The Gradio interface will launch at `http://localhost:7860` with a public sharea
 
 ---
 
+## Quick Demo (Google Colab GPU)
+
+The Railway deployment is **CPU-only and slow**. When you just want to check the
+functionality quickly, run the included **`Quick_demo.ipynb`** on a Colab GPU. It does
+**not** re-implement anything — it clones this repository at a pinned commit, installs the
+same pinned dependencies, and calls `app.demo.launch()`. The UI, consent gate, confidence
+gate, safety prompt, and LoRA adapter are all the exact artefacts in this repo; only the
+wall-clock latency changes (`app.py` already selects `cuda` automatically when a GPU is
+present, so no code edit is needed).
+
+**One-click launch:**
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Eistein/Ubuzima_1/blob/Master/Quick_demo.ipynb)
+
+### Prerequisites
+
+- A Google account (Colab's free T4 GPU is sufficient; L4/A100 also work).
+- An **OpenRouter API key** for the LLM layer — get one at <https://openrouter.ai/keys>.
+
+### Steps
+
+1. **Open the notebook in Colab** using the badge above, or upload `Quick_demo.ipynb` at
+   <https://colab.research.google.com> (**File → Upload notebook**).
+2. **Enable the GPU:** *Runtime → Change runtime type → T4 GPU → Save*.
+3. **Add your API key as a Colab Secret** (not as a cell variable): open the 🔑 panel in
+   the left sidebar → *Add new secret* → name it `OPENROUTER_API_KEY`, paste the value,
+   and toggle *Notebook access* on. (Add `HF_TOKEN` the same way only if the base model is
+   gated for you.) Keeping the key in Secrets means it is never saved inside the `.ipynb`.
+4. **Run step 1** to confirm a GPU is attached. If it prints `cpu`, redo step 2 above.
+5. **Run step 2** to install the pinned dependency set (`gradio==4.44.0` and the packages
+   whose newer releases break it).
+6. **Run step 3 to restart the runtime — this is required, not optional.** `pydantic` was
+   just downgraded, and Colab has already imported the newer one; without the restart the
+   first page load fails with `TypeError: argument of type 'bool' is not iterable`. The
+   session will drop; that is expected. **Then continue from step 4 — do not re-run steps
+   1–3.**
+7. **Run step 4** to clone this repo at the pinned commit (set `USE_LATEST = True` in that
+   cell if you want the current tip of `Master` instead).
+8. **Run step 5** to load your key from Colab Secrets (`app.py` refuses to start without
+   it, so this must run before you load the pipeline).
+9. *(Optional)* **Run step 6** to cache the ~2.4 GB base model on Google Drive, which makes
+   later sessions start in seconds instead of minutes.
+10. **Run step 7** to load the pipeline (`import app`). First run takes ~3–5 minutes, mostly
+    model download; watch for `Device: cuda` in the output.
+11. *(Optional)* **Run steps 8–10** for a plumbing smoke test, a 3-prompt safety spot-check,
+    and a GPU latency benchmark.
+12. **Run step 11** to launch. Click the **public `gradio.live` link** and **open it in a
+    new browser tab** — the microphone only works over that HTTPS link, not inside Colab's
+    inline output frame. The link stays live for 72 hours or until you stop the cell.
+
+The notebook contains its own **demo-day checklist** and an **"If something breaks"**
+troubleshooting table at the end. Cold start is 3–5 minutes, so run steps 1–7 before any
+live demonstration rather than in front of an audience.
+
+> **Local Jupyter (fallback):** if you have a local NVIDIA GPU, you can run the same
+> notebook in Jupyter — skip the Colab-Secrets and GPU-runtime cells, `export
+> OPENROUTER_API_KEY=...` in your shell first, and the pinned `%pip install` cell still
+> applies. On a machine without a GPU, prefer the standard [local run](#running-the-application)
+> (`python app.py`) instead.
+
+---
+
 ## Reproducing the Safety Evaluation
 
 The safety evaluation validates that the system refuses diagnostic and prescription requests.
@@ -220,6 +287,7 @@ Ubuzima_1/
 ├── .env.example              # Environment variable template
 ├── .gitignore                # Excludes secrets and cache
 ├── README.md                 # This file
+├── Quick_demo.ipynb          # Colab GPU runner — runs this exact app.py, fast (see README)
 ├── LICENSE                   # MIT License
 ├── adapter/                  # LoRA adapter weights (bundled)
 │   ├── adapter_config.json
