@@ -7,7 +7,7 @@ An End-to-End Kinyarwanda Voice Health Assistant Integrating Automatic Speech Re
 **Institution:** African Leadership University, Kigali, Rwanda  
 **Date:** July 2026
 
-**Live Demo (Railway, CPU-only):** [https://ubuzima1-production.up.railway.app](https://ubuzima1-production.up.railway.app)
+**Live Demo (Railway, CPU-only):** [https://ubuzima1-production-84f1.up.railway.app/](https://ubuzima1-production-84f1.up.railway.app/)
 
 > ⚠️ **The Railway demo runs on CPU only and is slow** — roughly 10min per turn, plus a cold start while the models load. To try the **same code** with GPU-speed latency, run the one-click **[Quick Demo notebook](#quick-demo-google-colab-gpu)** on Google Colab:
 >
@@ -226,6 +226,41 @@ live demonstration rather than in front of an audience.
 
 ---
 
+## Testing
+
+The project ships an automated test suite covering the safety-critical logic — confidence
+scoring and the gate, the safety prompt, output-language checks, pipeline decisions, and
+**provider/model fallback**.
+
+```bash
+pip install pytest torch
+export OPENROUTER_API_KEY=sk-...    # any non-empty value; provider tests use a fake client
+python -m pytest tests/ -v
+```
+
+Expected: **71 passed**. The provider-failure tests (`tests/test_llm_client.py`) inject a
+fake HTTP client, so they need no network or real key. A full structured test report — with
+numbered cases, expected-vs-actual results, edge cases (silence, noise, unsupported input,
+provider failure), latency across CPU/GPU, and a quality-metrics table — is in
+[`docs/TEST_REPORT.md`](./docs/TEST_REPORT.md).
+
+To add continuous testing, copy [`docs/ci-pytest.yml`](./docs/ci-pytest.yml) to
+`.github/workflows/pytest.yml` so the suite runs on every push.
+
+---
+
+## Documentation
+
+| Document | Purpose |
+|---|---|
+| [`docs/TEST_REPORT.md`](./docs/TEST_REPORT.md) | Structured test cases, results, edge cases, latency, metrics |
+| [`docs/ANALYSIS.md`](./docs/ANALYSIS.md) | Final analysis: results table, objective mapping, failure analysis |
+| [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) | Deployment plan, health evidence, audio-I/O verification |
+| [`docs/INTEGRATION_GUIDE.md`](./docs/INTEGRATION_GUIDE.md) | Wiring the fallback/logic modules into `app.py` |
+| [`docs/VIDEO_SCRIPT.md`](./docs/VIDEO_SCRIPT.md) | Demo walkthrough script |
+
+---
+
 ## Reproducing the Safety Evaluation
 
 The safety evaluation validates that the system refuses diagnostic and prescription requests.
@@ -280,14 +315,24 @@ Expected output: 20/20 compliant (100% refusal rate).
 ```
 Ubuzima_1/
 ├── app.py                    # Gradio interface and pipeline orchestrator
-├── safety_prompt.py          # Kinyarwanda health-safety system prompt
+├── safety_prompt.py          # Kinyarwanda health-safety system prompt (single source of truth)
 ├── asr_confidence.py         # ASR confidence scoring and gating
+├── llm_client.py             # LLM access with primary/fallback models + structured errors
+├── pipeline_logic.py         # Pure decision logic (consent, audio, band->action, error kinds)
+├── text_checks.py            # Output-language (Rule 1) and relevance checks
+├── logging_setup.py          # Shared, privacy-safe logging
 ├── requirements.txt          # Pinned dependencies with explanatory comments
 ├── Dockerfile                # Container configuration for Railway
 ├── .env.example              # Environment variable template
 ├── .gitignore                # Excludes secrets and cache
 ├── README.md                 # This file
 ├── Quick_demo.ipynb          # Colab GPU runner — runs this exact app.py, fast (see README)
+├── docs/                     # Test report, analysis, deployment, integration, video script
+│   ├── TEST_REPORT.md
+│   ├── ANALYSIS.md
+│   ├── DEPLOYMENT.md
+│   ├── INTEGRATION_GUIDE.md
+│   └── VIDEO_SCRIPT.md
 ├── LICENSE                   # MIT License
 ├── adapter/                  # LoRA adapter weights (bundled)
 │   ├── adapter_config.json
@@ -295,9 +340,12 @@ Ubuzima_1/
 │   └── ...
 ├── eval/                     # Evaluation scripts
 │   └── safety_eval.py        # Safety refusal validation (20 adversarial prompts)
-└── tests/                    # Unit tests
+└── tests/                    # Unit + integration tests (71 total)
     ├── test_safety_prompt.py
-    └── test_asr_confidence.py
+    ├── test_asr_confidence.py
+    ├── test_text_checks.py
+    ├── test_pipeline_logic.py
+    └── test_llm_client.py
 ```
 
 ---
