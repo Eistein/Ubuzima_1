@@ -7,7 +7,7 @@ An End-to-End Kinyarwanda Voice Health Assistant Integrating Automatic Speech Re
 **Institution:** African Leadership University, Kigali, Rwanda  
 **Date:** July 2026
 
-**Live Demo (Railway, CPU-only):** [https://ubuzima1-production-84f1.up.railway.app/](https://ubuzima1-production-84f1.up.railway.app/)
+**Live Demo (Railway, CPU-only):** [https://ubuzima1-production-84f1.up.railway.app](https://ubuzima1-production-84f1.up.railway.app)
 
 > ⚠️ **The Railway demo runs on CPU only and is slow** — roughly 10min per turn, plus a cold start while the models load. To try the **same code** with GPU-speed latency, run the one-click **[Quick Demo notebook](#quick-demo-google-colab-gpu)** on Google Colab:
 >
