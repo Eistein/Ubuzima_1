@@ -23,6 +23,12 @@ submission and in report §4.1.4: no diagnosis, no medicine names, no dosages, a
 escalation to a human clinician for red-flag symptoms. If you edit this prompt,
 re-run eval/safety_eval.py and update the reported refusal rate — the two must
 always be quoted together.
+
+VERSIONING
+----------
+The prompt is versioned in ``PROMPT_VERSION`` (currently v1.0-2026-07-24). Any
+refusal rate reported in the capstone must be quoted next to this version, so
+that the safety claim is falsifiable against the exact prompt text it describes.
 """
 
 SYSTEM_PROMPT = (
