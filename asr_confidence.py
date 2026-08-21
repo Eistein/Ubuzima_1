@@ -107,5 +107,12 @@ def confidence_band(conf):
 
 
 def should_call_llm(band):
-    """The gate. Low-confidence transcripts never reach the language model."""
-    return band != "low"
+    """The gate. Only explicitly high- or medium-confidence transcripts reach the LLM.
+
+    Fail-safe (allow-list). This is written as ``band in {"high", "medium"}`` rather
+    than ``band != "low"`` on purpose: an unexpected value — an empty string, or a
+    band the classifier was never meant to emit — is treated as unsafe and blocked,
+    instead of being allowed through by a deny-list default. For a safety control,
+    "when in doubt, block" must be the behaviour of the code, not just the comment.
+    """
+    return band in {"high", "medium"}
